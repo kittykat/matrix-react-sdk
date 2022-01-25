@@ -19,6 +19,7 @@ import React from "react";
 import { IFieldType, IInstance, IProtocol, IPublicRoomsChunkRoom } from "matrix-js-sdk/src/client";
 import { Visibility } from "matrix-js-sdk/src/@types/partials";
 import { IRoomDirectoryOptions } from "matrix-js-sdk/src/@types/requests";
+import { logger } from "matrix-js-sdk/src/logger";
 
 import { MatrixClientPeg } from "../../MatrixClientPeg";
 import dis from "../../dispatcher/dispatcher";
@@ -47,8 +48,7 @@ import ScrollPanel from "./ScrollPanel";
 import Spinner from "../views/elements/Spinner";
 import { ActionPayload } from "../../dispatcher/payloads";
 import { getDisplayAliasForAliasSet } from "../../Rooms";
-
-import { logger } from "matrix-js-sdk/src/logger";
+import { Action } from "../../dispatcher/actions";
 
 const MAX_NAME_LENGTH = 80;
 const MAX_TOPIC_LENGTH = 800;
@@ -393,7 +393,7 @@ export default class RoomDirectory extends React.Component<IProps, IState> {
 
     private onFilterChange = (alias: string) => {
         this.setState({
-            filterString: alias || "",
+            filterString: alias?.trim() || "",
         });
 
         // don't send the request for a little bit,
@@ -493,7 +493,7 @@ export default class RoomDirectory extends React.Component<IProps, IState> {
     private showRoom(room: IPublicRoomsChunkRoom, roomAlias?: string, autoJoin = false, shouldPeek = false) {
         this.onFinished();
         const payload: ActionPayload = {
-            action: 'view_room',
+            action: Action.ViewRoom,
             auto_join: autoJoin,
             should_peek: shouldPeek,
             _type: "room_directory", // instrumentation
@@ -589,9 +589,12 @@ export default class RoomDirectory extends React.Component<IProps, IState> {
         if (room.avatar_url) avatarUrl = mediaFromMxc(room.avatar_url).getSquareThumbnailHttp(32);
 
         // We use onMouseDown instead of onClick, so that we can avoid text getting selected
-        return [
+        return <div
+            key={room.room_id}
+            role="listitem"
+            className="mx_RoomDirectory_listItem"
+        >
             <div
-                key={`${room.room_id}_avatar`}
                 onMouseDown={(ev) => this.onRoomClicked(room, ev)}
                 className="mx_RoomDirectory_roomAvatar"
             >
@@ -603,53 +606,41 @@ export default class RoomDirectory extends React.Component<IProps, IState> {
                     idName={name}
                     url={avatarUrl}
                 />
-            </div>,
+            </div>
             <div
-                key={`${room.room_id}_description`}
                 onMouseDown={(ev) => this.onRoomClicked(room, ev)}
                 className="mx_RoomDirectory_roomDescription"
             >
-                <div
-                    className="mx_RoomDirectory_name"
-                    onMouseDown={(ev) => this.onRoomClicked(room, ev)}
-                >
+                <div className="mx_RoomDirectory_name">
                     { name }
                 </div>&nbsp;
                 <div
                     className="mx_RoomDirectory_topic"
-                    onMouseDown={(ev) => this.onRoomClicked(room, ev)}
                     dangerouslySetInnerHTML={{ __html: topic }}
                 />
-                <div
-                    className="mx_RoomDirectory_alias"
-                    onMouseDown={(ev) => this.onRoomClicked(room, ev)}
-                >
+                <div className="mx_RoomDirectory_alias">
                     { getDisplayAliasForRoom(room) }
                 </div>
-            </div>,
+            </div>
             <div
-                key={`${room.room_id}_memberCount`}
                 onMouseDown={(ev) => this.onRoomClicked(room, ev)}
                 className="mx_RoomDirectory_roomMemberCount"
             >
                 { room.num_joined_members }
-            </div>,
+            </div>
             <div
-                key={`${room.room_id}_preview`}
                 onMouseDown={(ev) => this.onRoomClicked(room, ev)}
-                // cancel onMouseDown otherwise shift-clicking highlights text
                 className="mx_RoomDirectory_preview"
             >
                 { previewButton }
-            </div>,
+            </div>
             <div
-                key={`${room.room_id}_join`}
                 onMouseDown={(ev) => this.onRoomClicked(room, ev)}
                 className="mx_RoomDirectory_join"
             >
                 { joinOrViewButton }
-            </div>,
-        ];
+            </div>
+        </div>;
     }
 
     private stringLooksLikeId(s: string, fieldType: IFieldType) {

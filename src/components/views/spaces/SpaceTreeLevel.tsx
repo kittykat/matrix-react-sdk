@@ -16,7 +16,6 @@ limitations under the License.
 
 import React, {
     createRef,
-    MouseEvent,
     InputHTMLAttributes,
     LegacyRef,
     ComponentProps,
@@ -24,27 +23,29 @@ import React, {
 } from "react";
 import classNames from "classnames";
 import { Room } from "matrix-js-sdk/src/models/room";
+import { DraggableProvidedDragHandleProps } from "react-beautiful-dnd";
 
 import RoomAvatar from "../avatars/RoomAvatar";
-import SpaceStore from "../../../stores/SpaceStore";
-import SpaceTreeLevelLayoutStore from "../../../stores/SpaceTreeLevelLayoutStore";
+import SpaceStore from "../../../stores/spaces/SpaceStore";
+import { SpaceKey } from "../../../stores/spaces";
+import SpaceTreeLevelLayoutStore from "../../../stores/spaces/SpaceTreeLevelLayoutStore";
 import NotificationBadge from "../rooms/NotificationBadge";
 import { _t } from "../../../languageHandler";
 import { ContextMenuTooltipButton } from "../../../accessibility/context_menu/ContextMenuTooltipButton";
 import { toRightOf, useContextMenu } from "../../structures/ContextMenu";
 import MatrixClientContext from "../../../contexts/MatrixClientContext";
-import AccessibleButton from "../elements/AccessibleButton";
+import AccessibleButton, { ButtonEvent } from "../elements/AccessibleButton";
 import { StaticNotificationState } from "../../../stores/notifications/StaticNotificationState";
 import { NotificationColor } from "../../../stores/notifications/NotificationColor";
 import { getKeyBindingsManager, RoomListAction } from "../../../KeyBindingsManager";
 import { NotificationState } from "../../../stores/notifications/NotificationState";
 import SpaceContextMenu from "../context_menus/SpaceContextMenu";
 import AccessibleTooltipButton from "../elements/AccessibleTooltipButton";
-import { DraggableProvidedDragHandleProps } from "react-beautiful-dnd";
 import { useRovingTabIndex } from "../../../accessibility/RovingTabIndex";
 
-interface IButtonProps extends Omit<ComponentProps<typeof AccessibleTooltipButton>, "title"> {
+interface IButtonProps extends Omit<ComponentProps<typeof AccessibleTooltipButton>, "title" | "onClick"> {
     space?: Room;
+    spaceKey?: SpaceKey;
     className?: string;
     selected?: boolean;
     label: string;
@@ -53,14 +54,14 @@ interface IButtonProps extends Omit<ComponentProps<typeof AccessibleTooltipButto
     isNarrow?: boolean;
     avatarSize?: number;
     ContextMenuComponent?: ComponentType<ComponentProps<typeof SpaceContextMenu>>;
-    onClick(ev: MouseEvent): void;
+    onClick?(ev?: ButtonEvent): void;
 }
 
 export const SpaceButton: React.FC<IButtonProps> = ({
     space,
+    spaceKey,
     className,
     selected,
-    onClick,
     label,
     contextMenuTooltip,
     notificationState,
@@ -88,7 +89,7 @@ export const SpaceButton: React.FC<IButtonProps> = ({
 
         notifBadge = <div className="mx_SpacePanel_badgeContainer">
             <NotificationBadge
-                onClick={() => SpaceStore.instance.setActiveRoomInSpace(space || null)}
+                onClick={() => SpaceStore.instance.setActiveRoomInSpace(spaceKey ?? space.roomId)}
                 forceCount={false}
                 notification={notificationState}
                 aria-label={ariaLabel}
@@ -116,7 +117,7 @@ export const SpaceButton: React.FC<IButtonProps> = ({
                 mx_SpaceButton_narrow: isNarrow,
             })}
             title={label}
-            onClick={onClick}
+            onClick={spaceKey ? () => SpaceStore.instance.setActiveSpace(spaceKey) : props.onClick}
             onContextMenu={openMenu}
             forceHide={!isNarrow || menuDisplayed}
             inputRef={handle}
@@ -125,9 +126,11 @@ export const SpaceButton: React.FC<IButtonProps> = ({
         >
             { children }
             <div className="mx_SpaceButton_selectionWrapper">
-                { avatar }
+                <div className="mx_SpaceButton_avatarWrapper">
+                    { avatar }
+                    { notifBadge }
+                </div>
                 { !isNarrow && <span className="mx_SpaceButton_name">{ label }</span> }
-                { notifBadge }
 
                 { ContextMenuComponent && <ContextMenuTooltipButton
                     className="mx_SpaceButton_menuButton"
@@ -143,8 +146,8 @@ export const SpaceButton: React.FC<IButtonProps> = ({
 };
 
 interface IItemProps extends InputHTMLAttributes<HTMLLIElement> {
-    space?: Room;
-    activeSpaces: Room[];
+    space: Room;
+    activeSpaces: SpaceKey[];
     isNested?: boolean;
     isPanelCollapsed?: boolean;
     onExpand?: Function;
@@ -154,6 +157,7 @@ interface IItemProps extends InputHTMLAttributes<HTMLLIElement> {
 }
 
 interface IItemState {
+    name: string;
     collapsed: boolean;
     childSpaces: Room[];
 }
@@ -173,20 +177,29 @@ export class SpaceItem extends React.PureComponent<IItemProps, IItemState> {
         );
 
         this.state = {
-            collapsed: collapsed,
+            name: this.props.space.name,
+            collapsed,
             childSpaces: this.childSpaces,
         };
 
         SpaceStore.instance.on(this.props.space.roomId, this.onSpaceUpdate);
+        this.props.space.on("Room.name", this.onRoomNameChange);
     }
 
     componentWillUnmount() {
         SpaceStore.instance.off(this.props.space.roomId, this.onSpaceUpdate);
+        this.props.space.off("Room.name", this.onRoomNameChange);
     }
 
     private onSpaceUpdate = () => {
         this.setState({
             childSpaces: this.childSpaces,
+        });
+    };
+
+    private onRoomNameChange = () => {
+        this.setState({
+            name: this.props.space.name,
         });
     };
 
@@ -256,7 +269,7 @@ export class SpaceItem extends React.PureComponent<IItemProps, IItemState> {
     private onClick = (ev: React.MouseEvent) => {
         ev.preventDefault();
         ev.stopPropagation();
-        SpaceStore.instance.setActiveSpace(this.props.space);
+        SpaceStore.instance.setActiveSpace(this.props.space.roomId);
     };
 
     render() {
@@ -314,8 +327,8 @@ export class SpaceItem extends React.PureComponent<IItemProps, IItemState> {
                     {...restDragHandleProps}
                     space={space}
                     className={isInvite ? "mx_SpaceButton_invite" : undefined}
-                    selected={activeSpaces.includes(space)}
-                    label={space.name}
+                    selected={activeSpaces.includes(space.roomId)}
+                    label={this.state.name}
                     contextMenuTooltip={_t("Space options")}
                     notificationState={notificationState}
                     isNarrow={isPanelCollapsed}
@@ -335,7 +348,7 @@ export class SpaceItem extends React.PureComponent<IItemProps, IItemState> {
 
 interface ITreeLevelProps {
     spaces: Room[];
-    activeSpaces: Room[];
+    activeSpaces: SpaceKey[];
     isNested?: boolean;
     parents: Set<string>;
 }

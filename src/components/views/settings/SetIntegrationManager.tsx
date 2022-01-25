@@ -15,15 +15,15 @@ limitations under the License.
 */
 
 import React from 'react';
+import { logger } from "matrix-js-sdk/src/logger";
+
 import { _t } from "../../../languageHandler";
 import { IntegrationManagers } from "../../../integrations/IntegrationManagers";
 import { IntegrationManagerInstance } from "../../../integrations/IntegrationManagerInstance";
-import * as sdk from '../../../index';
 import SettingsStore from "../../../settings/SettingsStore";
 import { SettingLevel } from "../../../settings/SettingLevel";
 import { replaceableComponent } from "../../../utils/replaceableComponent";
-
-import { logger } from "matrix-js-sdk/src/logger";
+import ToggleSwitch from "../elements/ToggleSwitch";
 
 interface IProps {
 
@@ -59,8 +59,6 @@ export default class SetIntegrationManager extends React.Component<IProps, IStat
     };
 
     public render(): React.ReactNode {
-        const ToggleSwitch = sdk.getComponent("views.elements.ToggleSwitch");
-
         const currentManager = this.state.currentManager;
         let managerName;
         let bodyText;
@@ -81,7 +79,11 @@ export default class SetIntegrationManager extends React.Component<IProps, IStat
                 <div className="mx_SettingsTab_heading">
                     <span>{ _t("Manage integrations") }</span>
                     <span className="mx_SettingsTab_subheading">{ managerName }</span>
-                    <ToggleSwitch checked={this.state.provisioningEnabled} onChange={this.onProvisioningToggled} />
+                    <ToggleSwitch
+                        checked={this.state.provisioningEnabled}
+                        disabled={false}
+                        onChange={this.onProvisioningToggled}
+                    />
                 </div>
                 <span className="mx_SettingsTab_subsectionText">
                     { bodyText }

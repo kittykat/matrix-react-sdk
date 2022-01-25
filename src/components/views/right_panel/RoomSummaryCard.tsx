@@ -25,9 +25,7 @@ import { _t } from '../../../languageHandler';
 import RoomAvatar from "../avatars/RoomAvatar";
 import AccessibleButton from "../elements/AccessibleButton";
 import defaultDispatcher from "../../../dispatcher/dispatcher";
-import { Action } from "../../../dispatcher/actions";
-import { RightPanelPhases } from "../../../stores/RightPanelStorePhases";
-import { SetRightPanelPhasePayload } from "../../../dispatcher/payloads/SetRightPanelPhasePayload";
+import { RightPanelPhases } from '../../../stores/right-panel/RightPanelStorePhases';
 import Modal from "../../../Modal";
 import ShareDialog from '../dialogs/ShareDialog';
 import { useEventEmitter } from "../../../hooks/useEventEmitter";
@@ -48,7 +46,7 @@ import { Container, MAX_PINNED, WidgetLayoutStore } from "../../../stores/widget
 import RoomName from "../elements/RoomName";
 import UIStore from "../../../stores/UIStore";
 import ExportDialog from "../dialogs/ExportDialog";
-import { dispatchShowThreadsPanelEvent } from "../../../dispatcher/dispatch-actions/threads";
+import RightPanelStore from "../../../stores/right-panel/RightPanelStore";
 
 interface IProps {
     room: Room;
@@ -97,14 +95,16 @@ const AppRow: React.FC<IAppRowProps> = ({ app, room }) => {
     const name = WidgetUtils.getWidgetName(app);
     const dataTitle = WidgetUtils.getWidgetDataTitle(app);
     const subtitle = dataTitle && " - " + dataTitle;
+    const [canModifyWidget, setCanModifyWidget] = useState<boolean>();
+
+    useEffect(() => {
+        setCanModifyWidget(WidgetUtils.canUserModifyWidgets(room.roomId));
+    }, [room.roomId]);
 
     const onOpenWidgetClick = () => {
-        defaultDispatcher.dispatch<SetRightPanelPhasePayload>({
-            action: Action.SetRightPanelPhase,
+        RightPanelStore.instance.pushCard({
             phase: RightPanelPhases.Widget,
-            refireParams: {
-                widgetId: app.id,
-            },
+            state: { widgetId: app.id },
         });
     };
 
@@ -139,14 +139,28 @@ const AppRow: React.FC<IAppRowProps> = ({ app, room }) => {
         mx_RoomSummaryCard_Button_pinned: isPinned,
     });
 
+    const isMaximised = WidgetLayoutStore.instance.isInContainer(room, app, Container.Center);
+    const toggleMaximised = isMaximised
+        ? () => { WidgetLayoutStore.instance.moveToContainer(room, app, Container.Right); }
+        : () => { WidgetLayoutStore.instance.moveToContainer(room, app, Container.Center); };
+
+    const maximiseTitle = isMaximised ? _t("Close") : _t("Maximise widget");
+
+    let openTitle = "";
+    if (isPinned) {
+        openTitle = _t("Unpin this widget to view it in this panel");
+    } else if (isMaximised) {
+        openTitle =_t("Close this widget to view it in this panel");
+    }
+
     return <div className={classes} ref={handle}>
         <AccessibleTooltipButton
             className="mx_RoomSummaryCard_icon_app"
             onClick={onOpenWidgetClick}
             // only show a tooltip if the widget is pinned
-            title={isPinned ? _t("Unpin a widget to view it in this panel") : ""}
-            forceHide={!isPinned}
-            disabled={isPinned}
+            title={openTitle}
+            forceHide={!(isPinned || isMaximised)}
+            disabled={isPinned || isMaximised}
             yOffset={-48}
         >
             <WidgetAvatar app={app} />
@@ -154,19 +168,25 @@ const AppRow: React.FC<IAppRowProps> = ({ app, room }) => {
             { subtitle }
         </AccessibleTooltipButton>
 
-        <ContextMenuTooltipButton
-            className="mx_RoomSummaryCard_app_options"
+        { canModifyWidget && <ContextMenuTooltipButton
+            className="mx_RoomSummaryCard_app_options mx_RoomSummaryCard_maximised_widget"
             isExpanded={menuDisplayed}
             onClick={openMenu}
             title={_t("Options")}
             yOffset={-24}
-        />
+        /> }
 
         <AccessibleTooltipButton
             className="mx_RoomSummaryCard_app_pinToggle"
             onClick={togglePin}
             title={pinTitle}
             disabled={cannotPin}
+            yOffset={-24}
+        />
+        <AccessibleTooltipButton
+            className={isMaximised ? "mx_RoomSummaryCard_app_minimise" : "mx_RoomSummaryCard_app_maximise"}
+            onClick={toggleMaximised}
+            title={maximiseTitle}
             yOffset={-24}
         />
 
@@ -208,18 +228,12 @@ const AppsSection: React.FC<IAppsSectionProps> = ({ room }) => {
     </Group>;
 };
 
-const onRoomMembersClick = () => {
-    defaultDispatcher.dispatch<SetRightPanelPhasePayload>({
-        action: Action.SetRightPanelPhase,
-        phase: RightPanelPhases.RoomMemberList,
-    });
+export const onRoomMembersClick = (allowClose = true) => {
+    RightPanelStore.instance.pushCard({ phase: RightPanelPhases.RoomMemberList }, allowClose);
 };
 
-const onRoomFilesClick = () => {
-    defaultDispatcher.dispatch<SetRightPanelPhasePayload>({
-        action: Action.SetRightPanelPhase,
-        phase: RightPanelPhases.FilePanel,
-    });
+export const onRoomFilesClick = (allowClose = true) => {
+    RightPanelStore.instance.pushCard({ phase: RightPanelPhases.FilePanel }, allowClose);
 };
 
 const onRoomSettingsClick = () => {
@@ -276,19 +290,17 @@ const RoomSummaryCard: React.FC<IProps> = ({ room, onClose }) => {
     return <BaseCard header={header} className="mx_RoomSummaryCard" onClose={onClose}>
         <Group title={_t("About")} className="mx_RoomSummaryCard_aboutGroup">
             <Button className="mx_RoomSummaryCard_icon_people" onClick={onRoomMembersClick}>
-                { _t("%(count)s people", { count: memberCount }) }
+                { _t("People") }
+                <span className="mx_BaseCard_Button_sublabel">
+                    { memberCount }
+                </span>
             </Button>
             <Button className="mx_RoomSummaryCard_icon_files" onClick={onRoomFilesClick}>
-                { _t("Show files") }
+                { _t("Files") }
             </Button>
             <Button className="mx_RoomSummaryCard_icon_export" onClick={onRoomExportClick}>
                 { _t("Export chat") }
             </Button>
-            { SettingsStore.getValue("feature_thread") && (
-                <Button className="mx_RoomSummaryCard_icon_threads" onClick={dispatchShowThreadsPanelEvent}>
-                    { _t("Show threads") }
-                </Button>
-            ) }
             <Button className="mx_RoomSummaryCard_icon_share" onClick={onShareRoomClick}>
                 { _t("Share room") }
             </Button>
